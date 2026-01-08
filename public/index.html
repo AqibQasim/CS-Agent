@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Odoo Message Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .message-body img { max-width: 100%; height: auto; }
+        .message-body a { color: #3b82f6; text-decoration: underline; }
+        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: #f1f1f1; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #555; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app" class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">📊 Odoo Message Dashboard</h1>
+                        <p class="text-sm text-gray-500">Real-time message monitoring</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div id="lastUpdate" class="text-sm text-gray-500">
+                            <span class="inline-block w-2 h-2 bg-green-500 rounded-full pulse"></span>
+                            Connecting...
+                        </div>
+                        <button onclick="dashboard.refresh()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stats Cards -->
+                <div id="statsCards" class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
+                    <!-- Stats will be inserted here -->
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 py-6">
+            <div class="grid grid-cols-12 gap-6">
+                
+                <!-- Sidebar - Channel List -->
+                <aside class="col-span-12 md:col-span-3">
+                    <!-- Filter Buttons -->
+                    <div class="bg-white rounded-lg shadow-sm p-4 mb-4">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-3">Filter by Type</h3>
+                        <div id="filterButtons" class="space-y-2">
+                            <!-- Filters will be inserted here -->
+                        </div>
+                    </div>
+
+                    <!-- Channel List -->
+                    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+                        <div class="p-4 border-b border-gray-200">
+                            <h2 class="font-semibold text-gray-900">Channels</h2>
+                            <input 
+                                type="text" 
+                                id="channelSearch" 
+                                placeholder="Search channels..." 
+                                class="mt-2 w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onkeyup="dashboard.filterChannels(this.value)"
+                            >
+                        </div>
+                        <div id="channelList" class="divide-y max-h-[600px] overflow-y-auto scrollbar-thin">
+                            <!-- Channels will be inserted here -->
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Main - Messages -->
+                <section class="col-span-12 md:col-span-9">
+                    <div class="bg-white rounded-lg shadow-sm">
+                        <div class="p-4 border-b border-gray-200 flex items-center justify-between">
+                            <div>
+                                <h2 id="messageTitle" class="font-semibold text-lg text-gray-900">All Messages</h2>
+                                <p id="messageCount" class="text-sm text-gray-500">0 messages</p>
+                            </div>
+                            <input 
+                                type="text" 
+                                id="messageSearch" 
+                                placeholder="Search messages..." 
+                                class="px-4 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                                onkeypress="if(event.key==='Enter') dashboard.searchMessages(this.value)"
+                            >
+                        </div>
+                        <div id="messageList" class="divide-y max-h-[700px] overflow-y-auto scrollbar-thin">
+                            <!-- Messages will be inserted here -->
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Dashboard Application
+        const dashboard = {
+            apiUrl: 'http://localhost:3000/api',
+            selectedChannel: null,
+            currentFilter: 'all',
+            channels: [],
+            messages: [],
+            stats: {},
+            pollInterval: null,
+
+            async init() {
+                console.log('🚀 Initializing dashboard...');
+                await this.loadData();
+                this.startPolling();
+                console.log('✅ Dashboard initialized');
+            },
+
+            async loadData() {
+                try {
+                    await Promise.all([
+                        this.loadStats(),
+                        this.loadChannels(),
+                        this.loadMessages()
+                    ]);
+                    this.updateLastUpdateTime();
+                } catch (error) {
+                    console.error('Error loading data:', error);
+                    this.showError('Failed to load data. Is the API server running?');
+                }
+            },
+
+            async loadStats() {
+                try {
+                    const response = await fetch(`${this.apiUrl}/stats`);
+                    const data = await response.json();
+                    this.stats = data;
+                    this.renderStats();
+                } catch (error) {
+                    console.error('Error loading stats:', error);
+                }
+            },
+
+            async loadChannels() {
+                try {
+                    const response = await fetch(`${this.apiUrl}/channels`);
+                    const data = await response.json();
+                    this.channels = data.all || [];
+                    this.renderFilters(data);
+                    this.renderChannels();
+                } catch (error) {
+                    console.error('Error loading channels:', error);
+                }
+            },
+
+            async loadMessages() {
+                try {
+                    const url = this.selectedChannel 
+                        ? `${this.apiUrl}/channels/${this.selectedChannel}/messages`
+                        : `${this.apiUrl}/messages/latest?limit=100`;
+                    
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    this.messages = data.messages || [];
+                    this.renderMessages();
+                } catch (error) {
+                    console.error('Error loading messages:', error);
+                }
+            },
+
+            renderStats() {
+                const container = document.getElementById('statsCards');
+                const stats = [
+                    { label: 'Total Channels', value: this.stats.channels?.total || 0, color: 'blue', icon: '📊' },
+                    { label: 'WhatsApp', value: this.stats.channels?.whatsapp || 0, color: 'green', icon: '📱' },
+                    { label: 'LiveChat', value: this.stats.channels?.livechat || 0, color: 'purple', icon: '💬' },
+                    { label: 'Total Messages', value: this.stats.messages?.total || 0, color: 'indigo', icon: '✉️' },
+                    { label: 'Unprocessed', value: this.stats.messages?.unprocessed || 0, color: 'red', icon: '⚠️' }
+                ];
+
+                container.innerHTML = stats.map(stat => `
+                    <div class="bg-${stat.color}-50 rounded-lg p-4 border border-${stat.color}-100">
+                        <div class="flex items-center justify-between">
+                            <span class="text-2xl">${stat.icon}</span>
+                            <span class="text-2xl font-bold text-${stat.color}-600">${stat.value}</span>
+                        </div>
+                        <p class="text-sm text-${stat.color}-700 mt-2 font-medium">${stat.label}</p>
+                    </div>
+                `).join('');
+            },
+
+            renderFilters(data) {
+                const container = document.getElementById('filterButtons');
+                const filters = [
+                    { id: 'all', label: 'All Channels', icon: '🌐', count: data.total },
+                    { id: 'whatsapp', label: 'WhatsApp', icon: '📱', count: data.whatsapp?.length || 0 },
+                    { id: 'livechat', label: 'Live Chat', icon: '💬', count: data.livechat?.length || 0 },
+                    { id: 'direct', label: 'Direct Messages', icon: '👤', count: data.chat?.length || 0 },
+                    { id: 'team', label: 'Team Channels', icon: '📢', count: data.channel?.length || 0 }
+                ];
+
+                container.innerHTML = filters.map(filter => `
+                    <button 
+                        onclick="dashboard.setFilter('${filter.id}')"
+                        class="w-full flex items-center justify-between px-3 py-2 rounded-md transition ${
+                            this.currentFilter === filter.id 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }"
+                    >
+                        <span class="flex items-center gap-2">
+                            <span>${filter.icon}</span>
+                            <span class="text-sm font-medium">${filter.label}</span>
+                        </span>
+                        <span class="text-xs font-bold">${filter.count}</span>
+                    </button>
+                `).join('');
+            },
+
+            renderChannels() {
+                const container = document.getElementById('channelList');
+                
+                let filtered = this.channels;
+                if (this.currentFilter !== 'all') {
+                    filtered = this.channels.filter(ch => {
+                        if (this.currentFilter === 'whatsapp') return ch.source_type === 'whatsapp';
+                        if (this.currentFilter === 'livechat') return ch.source_type === 'livechat';
+                        if (this.currentFilter === 'direct') return ch.source_type === 'direct_message';
+                        if (this.currentFilter === 'team') return ch.source_type === 'team_channel';
+                        return true;
+                    });
+                }
+
+                if (filtered.length === 0) {
+                    container.innerHTML = '<div class="p-8 text-center text-gray-500">No channels found</div>';
+                    return;
+                }
+
+                container.innerHTML = filtered.map(channel => {
+                    const icon = this.getChannelIcon(channel);
+                    const isSelected = this.selectedChannel === channel.id;
+                    
+                    return `
+                        <button 
+                            onclick="dashboard.selectChannel(${channel.id})"
+                            class="w-full p-4 text-left hover:bg-gray-50 transition ${
+                                isSelected ? 'bg-blue-50 border-l-4 border-blue-600' : ''
+                            }"
+                        >
+                            <div class="flex items-center gap-3">
+                                <span class="text-2xl">${icon}</span>
+                                <div class="flex-1 min-w-0">
+                                    <p class="font-medium truncate text-gray-900">${this.escapeHtml(channel.name)}</p>
+                                    <p class="text-xs text-gray-500 truncate">${channel.source_type}</p>
+                                </div>
+                            </div>
+                        </button>
+                    `;
+                }).join('');
+            },
+
+            renderMessages() {
+                const container = document.getElementById('messageList');
+                const title = document.getElementById('messageTitle');
+                const count = document.getElementById('messageCount');
+
+                if (this.selectedChannel) {
+                    const channel = this.channels.find(ch => ch.id === this.selectedChannel);
+                    title.textContent = channel ? channel.name : 'Channel';
+                } else {
+                    title.textContent = 'All Messages';
+                }
+
+                count.textContent = `${this.messages.length} messages`;
+
+                if (this.messages.length === 0) {
+                    container.innerHTML = '<div class="p-8 text-center text-gray-500">No messages yet</div>';
+                    return;
+                }
+
+                container.innerHTML = this.messages.map(msg => this.renderMessage(msg)).join('');
+            },
+
+            renderMessage(msg) {
+                const author = msg.author_id ? msg.author_id[1] : msg.email_from || 'Unknown';
+                const initial = author.charAt(0).toUpperCase();
+                const timeAgo = this.timeAgo(new Date(msg.date));
+                const body = this.cleanHtml(msg.body || '');
+                const hasAttachments = msg.attachment_ids && msg.attachment_ids.length > 0;
+
+                return `
+                    <div class="p-4 hover:bg-gray-50 transition">
+                        <div class="flex items-start gap-3">
+                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold flex-shrink-0">
+                                ${initial}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <p class="font-medium text-gray-900">${this.escapeHtml(author)}</p>
+                                    ${msg.channel_name ? `<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">${this.escapeHtml(msg.channel_name)}</span>` : ''}
+                                    <span class="text-xs text-gray-500">${timeAgo}</span>
+                                </div>
+                                <div class="mt-1 text-gray-700 text-sm message-body">${body}</div>
+                                ${hasAttachments ? `
+                                    <div class="mt-2 flex gap-2 flex-wrap">
+                                        ${msg.attachment_ids.map(() => `
+                                            <span class="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-md flex items-center gap-1">
+                                                📎 Attachment
+                                            </span>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            },
+
+            getChannelIcon(channel) {
+                const type = channel.source_type;
+                if (type === 'whatsapp') return '📱';
+                if (type === 'livechat') return '💬';
+                if (type === 'direct_message') return '👤';
+                if (type === 'team_channel') return '📢';
+                return '📨';
+            },
+
+            cleanHtml(html) {
+                const div = document.createElement('div');
+                div.innerHTML = html;
+                return div.textContent || div.innerText || '';
+            },
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            },
+
+            timeAgo(date) {
+                const seconds = Math.floor((new Date() - date) / 1000);
+                const intervals = {
+                    year: 31536000,
+                    month: 2592000,
+                    week: 604800,
+                    day: 86400,
+                    hour: 3600,
+                    minute: 60
+                };
+
+                for (let [unit, secondsInUnit] of Object.entries(intervals)) {
+                    const interval = Math.floor(seconds / secondsInUnit);
+                    if (interval >= 1) {
+                        return `${interval} ${unit}${interval > 1 ? 's' : ''} ago`;
+                    }
+                }
+                return 'just now';
+            },
+
+            setFilter(filter) {
+                this.currentFilter = filter;
+                this.selectedChannel = null;
+                this.renderChannels();
+                this.loadMessages();
+                this.loadStats();
+            },
+
+            selectChannel(channelId) {
+                this.selectedChannel = channelId;
+                this.renderChannels();
+                this.loadMessages();
+            },
+
+            filterChannels(query) {
+                const filtered = this.channels.filter(ch => 
+                    ch.name.toLowerCase().includes(query.toLowerCase())
+                );
+                
+                const container = document.getElementById('channelList');
+                if (filtered.length === 0) {
+                    container.innerHTML = '<div class="p-8 text-center text-gray-500">No channels found</div>';
+                    return;
+                }
+
+                container.innerHTML = filtered.map(channel => {
+                    const icon = this.getChannelIcon(channel);
+                    const isSelected = this.selectedChannel === channel.id;
+                    
+                    return `
+                        <button 
+                            onclick="dashboard.selectChannel(${channel.id})"
+                            class="w-full p-4 text-left hover:bg-gray-50 transition ${
+                                isSelected ? 'bg-blue-50 border-l-4 border-blue-600' : ''
+                            }"
+                        >
+                            <div class="flex items-center gap-3">
+                                <span class="text-2xl">${icon}</span>
+                                <div class="flex-1 min-w-0">
+                                    <p class="font-medium truncate">${this.escapeHtml(channel.name)}</p>
+                                    <p class="text-xs text-gray-500">${channel.source_type}</p>
+                                </div>
+                            </div>
+                        </button>
+                    `;
+                }).join('');
+            },
+
+            async searchMessages(query) {
+                if (!query) {
+                    await this.loadMessages();
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`${this.apiUrl}/messages/search?q=${encodeURIComponent(query)}`);
+                    const data = await response.json();
+                    this.messages = data.messages || [];
+                    this.renderMessages();
+                    document.getElementById('messageTitle').textContent = `Search: "${query}"`;
+                } catch (error) {
+                    console.error('Error searching:', error);
+                    this.showError('Search failed');
+                }
+            },
+
+            async refresh() {
+                console.log('🔄 Refreshing data...');
+                await this.loadData();
+            },
+
+            startPolling() {
+                // Refresh every 10 seconds
+                this.pollInterval = setInterval(() => {
+                    this.loadData();
+                }, 10000);
+                console.log('⏰ Auto-refresh enabled (every 10 seconds)');
+            },
+
+            updateLastUpdateTime() {
+                const el = document.getElementById('lastUpdate');
+                const now = new Date();
+                el.innerHTML = `
+                    <span class="inline-block w-2 h-2 bg-green-500 rounded-full pulse"></span>
+                    Updated ${now.toLocaleTimeString()}
+                `;
+            },
+
+            showError(message) {
+                alert(message);
+            }
+        };
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            dashboard.init();
+        });
+    </script>
+</body>
+</html>
