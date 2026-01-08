@@ -106,7 +106,6 @@
     </div>
 
     <script>
-        // Dashboard Application
         const dashboard = {
             apiUrl: 'http://localhost:3000/api',
             selectedChannel: null,
@@ -164,7 +163,7 @@
                 try {
                     const url = this.selectedChannel 
                         ? `${this.apiUrl}/channels/${this.selectedChannel}/messages`
-                        : `${this.apiUrl}/messages/latest?limit=100`;
+                        : `${this.apiUrl}/messages/latest?limit=50`;
                     
                     const response = await fetch(url);
                     const data = await response.json();
@@ -243,7 +242,7 @@
                     return;
                 }
 
-                container.innerHTML = filtered.map(channel => {
+                container.innerHTML = filtered.slice(0, 100).map(channel => {
                     const icon = this.getChannelIcon(channel);
                     const isSelected = this.selectedChannel === channel.id;
                     
@@ -389,7 +388,7 @@
                     return;
                 }
 
-                container.innerHTML = filtered.map(channel => {
+                container.innerHTML = filtered.slice(0, 100).map(channel => {
                     const icon = this.getChannelIcon(channel);
                     const isSelected = this.selectedChannel === channel.id;
                     
@@ -436,7 +435,6 @@
             },
 
             startPolling() {
-                // Refresh every 10 seconds
                 this.pollInterval = setInterval(() => {
                     this.loadData();
                 }, 10000);
@@ -457,7 +455,6 @@
             }
         };
 
-        // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
             dashboard.init();
         });

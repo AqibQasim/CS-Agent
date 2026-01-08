@@ -1,43 +1,3 @@
-// const express = require('express');
-// const OdooClient = require('./odooClient');
-// const MessageStore = require('./messageStore');
-
-// const app = express();
-// const odoo = new OdooClient(/*...*/);
-// const store = new MessageStore(/*...*/);
-
-// // Get all channels
-// app.get('/api/channels', async (req, res) => {
-//   const channels = await odoo.getAllWhatsAppChannels();
-//   res.json(channels);
-// });
-
-// // Get conversation for specific channel
-// app.get('/api/channels/:id/messages', async (req, res) => {
-//   const channelId = parseInt(req.params.id);
-//   const messages = await odoo.getChannelConversation(channelId);
-//   res.json(messages);
-// });
-
-// // Get latest messages from DB
-// app.get('/api/messages/latest', async (req, res) => {
-//   const messages = await store.db.collection('messages')
-//     .find()
-//     .sort({ date: -1 })
-//     .limit(50)
-//     .toArray();
-//   res.json(messages);
-// });
-
-// // Get unprocessed messages (for AI)
-// app.get('/api/messages/unprocessed', async (req, res) => {
-//   const messages = await store.getUnprocessedMessages();
-//   res.json(messages);
-// });
-
-// app.listen(3000, () => {
-//   console.log('🌐 API server running on http://localhost:3000');
-// });
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -50,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); // Serve static files from public folder
+app.use(express.static('public'));
 
 // Initialize clients
 const odoo = new OdooClient(
@@ -62,7 +22,6 @@ const odoo = new OdooClient(
 
 const store = new MessageStore(process.env.MONGODB_URI);
 
-// Initialize on startup
 let isInitialized = false;
 
 async function initialize() {
@@ -79,7 +38,6 @@ async function initialize() {
   }
 }
 
-// Helper to detect channel type
 function detectChannelType(channel) {
   if (/^\d+$/.test(channel.name)) return 'whatsapp';
   if (channel.channel_type === 'livechat') return 'livechat';
@@ -90,7 +48,6 @@ function detectChannelType(channel) {
 
 // Routes
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -99,13 +56,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Get all channels
 app.get('/api/channels', async (req, res) => {
   try {
     await initialize();
     const channels = await odoo.getAllChannels();
     
-    // Add metadata to each channel
     const enrichedChannels = channels.all.map(ch => ({
       ...ch,
       source_type: detectChannelType(ch)
@@ -125,17 +80,12 @@ app.get('/api/channels', async (req, res) => {
   }
 });
 
-// Get latest messages from ALL channels
 app.get('/api/messages/latest', async (req, res) => {
   try {
     await initialize();
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = parseInt(req.query.limit) || 20;
     
-    const messages = await store.db.collection('messages')
-      .find({})
-      .sort({ date: -1 })
-      .limit(limit)
-      .toArray();
+    const messages = await store.getAllMessages(0, limit);
 
     res.json({
       messages: messages,
@@ -147,18 +97,13 @@ app.get('/api/messages/latest', async (req, res) => {
   }
 });
 
-// Get messages for specific channel
 app.get('/api/channels/:id/messages', async (req, res) => {
   try {
     await initialize();
     const channelId = parseInt(req.params.id);
     const limit = parseInt(req.query.limit) || 100;
 
-    const messages = await store.db.collection('messages')
-      .find({ channel_id: channelId })
-      .sort({ date: 1 })
-      .limit(limit)
-      .toArray();
+    const messages = await store.getMessagesByChannel(channelId, limit);
 
     res.json({
       channelId: channelId,
@@ -171,7 +116,6 @@ app.get('/api/channels/:id/messages', async (req, res) => {
   }
 });
 
-// Get unprocessed messages (for AI)
 app.get('/api/messages/unprocessed', async (req, res) => {
   try {
     await initialize();
@@ -189,24 +133,12 @@ app.get('/api/messages/unprocessed', async (req, res) => {
   }
 });
 
-// Get statistics
 app.get('/api/stats', async (req, res) => {
   try {
     await initialize();
     
     const channels = await odoo.getAllChannels();
-    const totalMessages = await store.db.collection('messages').countDocuments({});
-    const unprocessedCount = await store.db.collection('messages')
-      .countDocuments({ processed: false });
-
-    const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recentMessages = await store.db.collection('messages')
-      .countDocuments({ created_at: { $gte: last24Hours } });
-
-    // Get messages by channel type
-    const messagesByType = await store.db.collection('messages').aggregate([
-      { $group: { _id: '$channel_type', count: { $sum: 1 } } }
-    ]).toArray();
+    const storeStats = await store.getStats();
 
     res.json({
       channels: {
@@ -217,10 +149,10 @@ app.get('/api/stats', async (req, res) => {
         team: channels.channel.length
       },
       messages: {
-        total: totalMessages,
-        unprocessed: unprocessedCount,
-        last24h: recentMessages,
-        byType: messagesByType
+        total: storeStats.totalMessages,
+        unprocessed: storeStats.unprocessedCount,
+        last24h: storeStats.recentMessages,
+        byType: storeStats.messagesByType
       },
       timestamp: new Date()
     });
@@ -230,7 +162,6 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// Search messages
 app.get('/api/messages/search', async (req, res) => {
   try {
     await initialize();
@@ -241,17 +172,7 @@ app.get('/api/messages/search', async (req, res) => {
       return res.status(400).json({ error: 'Query parameter "q" is required' });
     }
 
-    const messages = await store.db.collection('messages')
-      .find({
-        $or: [
-          { body: { $regex: query, $options: 'i' } },
-          { channel_name: { $regex: query, $options: 'i' } },
-          { 'author_id.1': { $regex: query, $options: 'i' } }
-        ]
-      })
-      .sort({ date: -1 })
-      .limit(limit)
-      .toArray();
+    const messages = await store.searchMessages(query, limit);
 
     res.json({
       query: query,
