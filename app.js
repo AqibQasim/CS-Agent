@@ -68,7 +68,7 @@ class OdooMessagePoller {
           'search_read',
           [[
             ['model', '=', 'discuss.channel'],
-            ['message_type', '=', 'comment']
+            ['message_type', 'in', ['comment', 'whatsapp_message', 'notification']]
           ]],
           {
             fields: ['id', 'date'],

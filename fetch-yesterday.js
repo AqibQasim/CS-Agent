@@ -2,8 +2,8 @@ require('dotenv').config();
 const OdooClient = require('./odooClient');
 const MessageStore = require('./messageStore');
 
-async function backfillLast24Hours() {
-  console.log('🔄 Backfilling messages from last 24 hours...\n');
+async function fetchYesterday() {
+  console.log('🔄 Fetching messages from yesterday (Jan 8, 2026)...\n');
   
   const odoo = new OdooClient(
     process.env.ODOO_URL,
@@ -18,41 +18,49 @@ async function backfillLast24Hours() {
     await odoo.authenticate();
     await store.connect();
     
-    // Calculate 24 hours ago
-    const yesterday = new Date();
-    yesterday.setHours(yesterday.getHours() - 24);
-    const yesterdayStr = yesterday.toISOString().replace('T', ' ').substring(0, 19);
+    // Set specific date range for Jan 8, 2026
+    const startDate = '2026-01-08 00:00:00';
+    const endDate = '2026-01-09 23:59:59';
     
-    console.log(`📅 Fetching messages from: ${yesterdayStr}`);
-    console.log(`📅 Until now: ${new Date().toISOString().replace('T', ' ').substring(0, 19)}\n`);
+    console.log(`📅 Fetching from: ${startDate}`);
+    console.log(`📅 Until: ${endDate}\n`);
     
-    // 🔥 Fetch messages from last 24 hours (including WhatsApp)
+    // Fetch messages from specific date range (including WhatsApp)
     const messages = await odoo.execute(
       'mail.message',
       'search_read',
       [[
         ['model', '=', 'discuss.channel'],
         ['message_type', 'in', ['comment', 'whatsapp_message', 'notification']],
-        ['date', '>=', yesterdayStr]  // 🔥 Last 24 hours
+        ['date', '>=', startDate],
+        ['date', '<=', endDate]
       ]],
       {
         fields: ['id', 'body', 'date', 'author_id', 'email_from', 'res_id', 'attachment_ids', 'message_type'],
         order: 'date desc',
-        limit: 5000  // Max 5000 messages
+        limit: 5000
       }
     );
     
+    console.log(`✅ Found ${messages.length} messages from Jan 8-9, 2026\n`);
+    
     if (messages.length === 0) {
-      console.log('⚠️  No messages found in last 24 hours');
+      console.log('⚠️  No messages found in this date range');
       await store.client.close();
       process.exit(0);
     }
     
-    console.log(`✅ Found ${messages.length} messages from last 24 hours\n`);
+    // Show first few messages
+    console.log('📋 Sample messages:');
+    messages.slice(0, 5).forEach((msg, i) => {
+      const author = msg.author_id ? msg.author_id[1] : 'Unknown';
+      const body = (msg.body || '').replace(/<[^>]*>/g, '').substring(0, 50);
+      console.log(`${i + 1}. [${msg.date}] ${author}: ${body}...`);
+    });
     
-    // Get unique channel IDs
+    // Get channel info
     const channelIds = [...new Set(messages.map(m => m.res_id))];
-    console.log(`📱 Fetching info for ${channelIds.length} channels...`);
+    console.log(`\n📱 Fetching info for ${channelIds.length} channels...`);
     
     const channels = await odoo.getChannelsByIds(channelIds);
     const channelMap = new Map(channels.map(ch => [ch.id, ch]));
@@ -60,22 +68,14 @@ async function backfillLast24Hours() {
     // Save messages
     let savedCount = 0;
     let duplicateCount = 0;
-    let channelTypeStats = {
-      whatsapp: 0,
-      livechat: 0,
-      direct_message: 0,
-      team_channel: 0,
-      unknown: 0
-    };
     
-    console.log(`\n💾 Saving messages to database...\n`);
+    console.log(`\n💾 Saving messages to MongoDB...\n`);
     
     for (const message of messages) {
       const channel = channelMap.get(message.res_id);
       if (!channel) continue;
       
       const channelType = detectChannelType(channel);
-      channelTypeStats[channelType]++;
       
       try {
         await store.saveMessage({
@@ -85,11 +85,10 @@ async function backfillLast24Hours() {
         });
         savedCount++;
         
-        if (savedCount % 100 === 0) {
+        if (savedCount % 50 === 0) {
           console.log(`   📊 Saved ${savedCount}/${messages.length} messages...`);
         }
       } catch (err) {
-        // Skip duplicates
         if (err.code === 11000) {
           duplicateCount++;
         } else {
@@ -98,7 +97,7 @@ async function backfillLast24Hours() {
       }
     }
     
-    // Update last message ID to the latest one
+    // Update last message ID
     if (messages.length > 0) {
       const latestMessageId = Math.max(...messages.map(m => m.id));
       await store.updateLastGlobalMessageId(latestMessageId);
@@ -106,19 +105,13 @@ async function backfillLast24Hours() {
     }
     
     console.log('\n' + '='.repeat(60));
-    console.log('📊 Backfill Complete!');
+    console.log('✅ Fetch Complete!');
     console.log('='.repeat(60));
     console.log(`✅ Saved: ${savedCount} new messages`);
     console.log(`⏭️  Skipped: ${duplicateCount} duplicates`);
-    console.log(`📅 Time Range: Last 24 hours`);
-    console.log('\n📊 Messages by Type:');
-    console.log(`   📱 WhatsApp: ${channelTypeStats.whatsapp}`);
-    console.log(`   💬 LiveChat: ${channelTypeStats.livechat}`);
-    console.log(`   👤 Direct Messages: ${channelTypeStats.direct_message}`);
-    console.log(`   📢 Team Channels: ${channelTypeStats.team_channel}`);
-    console.log(`   ❓ Unknown: ${channelTypeStats.unknown}`);
-    console.log('\n🎯 Dashboard should now display these messages!');
-    console.log('🚀 Run: node app.js to continue monitoring\n');
+    console.log(`📅 Date Range: Jan 8-9, 2026`);
+    console.log('\n🎯 Now refresh your dashboard!');
+    console.log('🌐 http://localhost:3000/index.html\n');
     
     await store.client.close();
     process.exit(0);
@@ -138,4 +131,5 @@ function detectChannelType(channel) {
   return 'unknown';
 }
 
-backfillLast24Hours();
+fetchYesterday();
+

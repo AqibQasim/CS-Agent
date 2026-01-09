@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Odoo Discuss - Message Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .message-body img { max-width: 100%; height: auto; }
+        .message-body a { color: #3b82f6; text-decoration: underline; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: #f1f1f1; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        /* Chat background pattern */
+        .chat-bg {
+            background-color: #e5ddd5;
+            background-image: 
+                linear-gradient(135deg, rgba(0,0,0,0.02) 25%, transparent 25%),
+                linear-gradient(225deg, rgba(0,0,0,0.02) 25%, transparent 25%),
+                linear-gradient(45deg, rgba(0,0,0,0.02) 25%, transparent 25%),
+                linear-gradient(315deg, rgba(0,0,0,0.02) 25%, transparent 25%);
+            background-size: 20px 20px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app" class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">💬 Odoo Discuss</h1>
+                        <p class="text-sm text-gray-500">Two-way messaging system</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div id="lastUpdate" class="text-sm text-gray-500">
+                            <span class="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                            Connected
+                        </div>
+                        <button onclick="dashboard.refresh()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stats Cards -->
+                <div id="statsCards" class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
+                    <!-- Stats will be inserted here -->
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 py-6">
+            <div class="grid grid-cols-12 gap-6">
+                
+                <!-- Sidebar - Channel List -->
+                <aside class="col-span-12 md:col-span-3">
+                    <!-- Filter Buttons -->
+                    <div class="bg-white rounded-lg shadow-sm p-4 mb-4">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-3">Filter by Type</h3>
+                        <div id="filterButtons" class="space-y-2">
+                            <!-- Filters will be inserted here -->
+                        </div>
+                    </div>
+
+                    <!-- Channel List -->
+                    <div class="bg-white rounded-lg shadow-sm overflow-hidden">
+                        <div class="p-4 border-b border-gray-200">
+                            <h2 class="font-semibold text-gray-900">Channels</h2>
+                            <input 
+                                type="text" 
+                                id="channelSearch" 
+                                placeholder="Search channels..." 
+                                class="mt-2 w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onkeyup="dashboard.filterChannels(this.value)"
+                            >
+                        </div>
+                        <div id="channelList" class="divide-y max-h-[600px] overflow-y-auto scrollbar-thin">
+                            <!-- Channels will be inserted here -->
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Main - Conversation View -->
+                <section class="col-span-12 md:col-span-9">
+                    <div class="bg-white rounded-lg shadow-sm flex flex-col" style="height: 800px;">
+                        <!-- Conversation Header -->
+                        <div class="p-4 border-b border-gray-200">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h2 id="messageTitle" class="font-semibold text-lg text-gray-900">Select a channel</h2>
+                                    <p id="messageCount" class="text-sm text-gray-500">0 messages</p>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="dashboard.setTimeRange(24)" class="time-range-btn px-3 py-1 text-xs rounded-md bg-blue-600 text-white">24h</button>
+                                    <button onclick="dashboard.setTimeRange(72)" class="time-range-btn px-3 py-1 text-xs rounded-md bg-gray-100">3 Days</button>
+                                    <button onclick="dashboard.setTimeRange(null)" class="time-range-btn px-3 py-1 text-xs rounded-md bg-gray-100">All</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Feed -->
+                        <div id="messageList" class="flex-1 overflow-y-auto scrollbar-thin chat-bg p-4">
+                            <div class="text-center text-gray-500 py-20">
+                                <div class="text-6xl mb-4">💬</div>
+                                <p class="text-lg">Select a channel to view messages</p>
+                            </div>
+                        </div>
+
+                        <!-- Message Input (shown only when channel is selected) -->
+                        <div id="messageInput" class="p-4 border-t border-gray-200 bg-gray-50 hidden">
+                            <div class="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    id="newMessage" 
+                                    placeholder="Type your message..." 
+                                    class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    onkeypress="if(event.key==='Enter') dashboard.sendMessage()"
+                                >
+                                <button onclick="dashboard.sendMessage()" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium">
+                                    Send 📤
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2">💡 Press Enter to send • This sends directly to Odoo</p>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const dashboard = {
+            apiUrl: 'http://localhost:3000/api',
+            selectedChannel: null,
+            currentFilter: 'all',
+            timeRangeHours: 24,
+            channels: [],
+            messages: [],
+            stats: {},
+            pollInterval: null,
+
+            async init() {
+                console.log('🚀 Initializing Odoo Discuss Dashboard...');
+                await this.loadData();
+                this.startPolling();
+                console.log('✅ Dashboard ready');
+            },
+
+            async loadData() {
+                try {
+                    await Promise.all([
+                        this.loadStats(),
+                        this.loadChannels(),
+                    ]);
+                    if (this.selectedChannel) {
+                        await this.loadMessages();
+                    }
+                    this.updateLastUpdateTime();
+                } catch (error) {
+                    console.error('Error loading data:', error);
+                    alert('Failed to load data. Is the API server running?');
+                }
+            },
+
+            async loadStats() {
+                try {
+                    const response = await fetch(`${this.apiUrl}/stats`);
+                    const data = await response.json();
+                    this.stats = data;
+                    this.renderStats();
+                } catch (error) {
+                    console.error('Error loading stats:', error);
+                }
+            },
+
+            async loadChannels() {
+                try {
+                    const response = await fetch(`${this.apiUrl}/channels`);
+                    const data = await response.json();
+                    this.channels = data.all || [];
+                    this.renderFilters(data);
+                    this.renderChannels();
+                } catch (error) {
+                    console.error('Error loading channels:', error);
+                }
+            },
+
+            async loadMessages() {
+                try {
+                    if (!this.selectedChannel) return;
+
+                    const url = `${this.apiUrl}/channels/${this.selectedChannel}/messages?limit=200`;
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    this.messages = data.messages || [];
+                    this.renderMessages();
+                } catch (error) {
+                    console.error('Error loading messages:', error);
+                }
+            },
+
+            renderStats() {
+                const container = document.getElementById('statsCards');
+                const stats = [
+                    { label: 'Channels', value: this.stats.channels?.total || 0, color: 'blue', icon: '📊' },
+                    { label: 'WhatsApp', value: this.stats.channels?.whatsapp || 0, color: 'green', icon: '📱' },
+                    { label: 'Messages', value: this.stats.messages?.total || 0, color: 'indigo', icon: '✉️' },
+                    { label: 'Unread', value: this.stats.messages?.unprocessed || 0, color: 'red', icon: '🔴' },
+                    { label: 'Last 24h', value: this.stats.messages?.last24h || 0, color: 'purple', icon: '⏰' }
+                ];
+
+                container.innerHTML = stats.map(stat => `
+                    <div class="bg-white rounded-lg p-4 border border-gray-200">
+                        <div class="flex items-center justify-between">
+                            <span class="text-2xl">${stat.icon}</span>
+                            <span class="text-2xl font-bold text-${stat.color}-600">${stat.value}</span>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-2">${stat.label}</p>
+                    </div>
+                `).join('');
+            },
+
+            renderFilters(data) {
+                const container = document.getElementById('filterButtons');
+                const filters = [
+                    { id: 'all', label: 'All', icon: '🌐', count: data.total },
+                    { id: 'whatsapp', label: 'WhatsApp', icon: '📱', count: data.whatsapp?.length || 0 },
+                    { id: 'livechat', label: 'Live Chat', icon: '💬', count: data.livechat?.length || 0 },
+                    { id: 'direct', label: 'Direct', icon: '👤', count: data.chat?.length || 0 },
+                ];
+
+                container.innerHTML = filters.map(filter => `
+                    <button 
+                        onclick="dashboard.setFilter('${filter.id}')"
+                        class="w-full flex items-center justify-between px-3 py-2 rounded-md transition ${
+                            this.currentFilter === filter.id 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }"
+                    >
+                        <span class="flex items-center gap-2">
+                            <span>${filter.icon}</span>
+                            <span class="text-sm font-medium">${filter.label}</span>
+                        </span>
+                        <span class="text-xs font-bold">${filter.count}</span>
+                    </button>
+                `).join('');
+            },
+
+            renderChannels() {
+                const container = document.getElementById('channelList');
+                
+                let filtered = this.channels;
+                if (this.currentFilter !== 'all') {
+                    filtered = this.channels.filter(ch => {
+                        if (this.currentFilter === 'whatsapp') return ch.source_type === 'whatsapp';
+                        if (this.currentFilter === 'livechat') return ch.source_type === 'livechat';
+                        if (this.currentFilter === 'direct') return ch.source_type === 'direct_message';
+                        return true;
+                    });
+                }
+
+                if (filtered.length === 0) {
+                    container.innerHTML = '<div class="p-8 text-center text-gray-500">No channels found</div>';
+                    return;
+                }
+
+                container.innerHTML = filtered.map(channel => {
+                    const icon = this.getChannelIcon(channel);
+                    const isSelected = this.selectedChannel === channel.id;
+                    
+                    return `
+                        <button 
+                            onclick="dashboard.selectChannel(${channel.id})"
+                            class="w-full p-4 text-left hover:bg-gray-50 transition ${
+                                isSelected ? 'bg-blue-50 border-l-4 border-blue-600' : ''
+                            }"
+                        >
+                            <div class="flex items-center gap-3">
+                                <span class="text-2xl">${icon}</span>
+                                <div class="flex-1 min-w-0">
+                                    <p class="font-medium truncate text-gray-900">${this.escapeHtml(channel.name)}</p>
+                                    <p class="text-xs text-gray-500 truncate">${channel.source_type}</p>
+                                </div>
+                            </div>
+                        </button>
+                    `;
+                }).join('');
+            },
+
+            renderMessages() {
+                const container = document.getElementById('messageList');
+                const title = document.getElementById('messageTitle');
+                const count = document.getElementById('messageCount');
+                const inputBox = document.getElementById('messageInput');
+
+                if (this.selectedChannel) {
+                    const channel = this.channels.find(ch => ch.id === this.selectedChannel);
+                    title.textContent = channel ? `📱 ${channel.name}` : 'Channel';
+                    inputBox.classList.remove('hidden');
+                } else {
+                    title.textContent = 'Select a channel';
+                    inputBox.classList.add('hidden');
+                }
+
+                count.textContent = `${this.messages.length} messages`;
+
+                if (this.messages.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center text-gray-500 py-20">
+                            <div class="text-6xl mb-4">📭</div>
+                            <p class="text-lg">No messages in this conversation</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Render each message individually
+                container.innerHTML = this.messages.map(msg => this.renderMessage(msg)).join('');
+                
+                // Scroll to bottom
+                setTimeout(() => container.scrollTop = container.scrollHeight, 100);
+            },
+
+            renderMessage(msg) {
+                const author = msg.author_id ? msg.author_id[1] : msg.email_from || 'Customer';
+                const initial = author.charAt(0).toUpperCase();
+                const time = new Date(msg.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                const date = new Date(msg.date).toLocaleDateString();
+                const body = this.cleanHtml(msg.body || '');
+                const hasAttachments = msg.attachment_ids && msg.attachment_ids.length > 0;
+
+                // COMPLETE list of your team members (from Odoo)
+                const teamMembers = [
+                    'administrator',
+                    'muhammad aqib',
+                    'helen sarhan',
+                    'abdullah al-ghamdi',
+                    'abdulrahman alharbi',
+                    'abdulraqeeb joyo',  // YOUR TEAM!
+                    'amr almarzouki',
+                    'aseel basha',
+                    'dania abdel rahim taher',
+                    'faisal sadagah',
+                    'landing page',
+                    'sultan alolayan',
+                    'test msg',
+                    'walaa alsubhi',
+                    'youssuf favez',
+                    'odoobot',
+                    'bot'
+                ];
+
+                // Check if author is team member
+                const authorLower = author.toLowerCase();
+                const isAgent = teamMembers.some(member => authorLower.includes(member)) ||
+                               author.includes('@wheekeep') ||
+                               author.includes('info@');
+                
+                if (isAgent) {
+                    // AGENT MESSAGE - LEFT (Green)
+                    return `
+                        <div class="mb-4 flex items-start gap-2">
+                            <div class="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-white font-bold flex-shrink-0">
+                                ${initial}
+                            </div>
+                            <div class="max-w-[70%]">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-sm font-semibold text-green-700">${this.escapeHtml(author)}</span>
+                                    <span class="text-xs text-gray-400">${time}</span>
+                                </div>
+                                <div class="bg-white border border-gray-200 rounded-lg rounded-tl-none px-4 py-2 shadow-sm">
+                                    <div class="text-sm text-gray-800">${body}</div>
+                                    ${hasAttachments ? `
+                                        <div class="mt-2 space-y-1">
+                                            ${msg.attachment_ids.map((attId, idx) => `
+                                                <button 
+                                                    onclick="dashboard.viewAttachment(${attId}, ${msg.message_id})" 
+                                                    class="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded cursor-pointer transition"
+                                                >
+                                                    <span>📎</span>
+                                                    <span class="underline font-medium">Attachment ${idx + 1}</span>
+                                                    <span class="text-gray-400">•</span>
+                                                    <span class="text-gray-500">Click to view</span>
+                                                </button>
+                                            `).join('')}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // CUSTOMER MESSAGE - RIGHT (Blue)
+                    return `
+                        <div class="mb-4 flex items-start gap-2 flex-row-reverse">
+                            <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold flex-shrink-0">
+                                ${initial}
+                            </div>
+                            <div class="max-w-[70%]">
+                                <div class="flex items-center gap-2 mb-1 flex-row-reverse">
+                                    <span class="text-sm font-semibold text-blue-700">${this.escapeHtml(author)}</span>
+                                    <span class="text-xs text-gray-400">${time}</span>
+                                </div>
+                                <div class="bg-blue-500 text-white rounded-lg rounded-tr-none px-4 py-2 shadow-sm">
+                                    <div class="text-sm">${body}</div>
+                                    ${hasAttachments ? `
+                                        <div class="mt-2 space-y-1">
+                                            ${msg.attachment_ids.map((attId, idx) => `
+                                                <button 
+                                                    onclick="dashboard.viewAttachment(${attId}, ${msg.message_id})" 
+                                                    class="flex items-center gap-2 text-xs text-blue-100 hover:text-white hover:bg-blue-600 px-2 py-1 rounded cursor-pointer transition"
+                                                >
+                                                    <span>📎</span>
+                                                    <span class="underline font-medium">Attachment ${idx + 1}</span>
+                                                    <span>•</span>
+                                                    <span>Click to view</span>
+                                                </button>
+                                            `).join('')}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            },
+
+            async sendMessage() {
+                const input = document.getElementById('newMessage');
+                const message = input.value.trim();
+                
+                if (!message || !this.selectedChannel) {
+                    alert('Please enter a message');
+                    return;
+                }
+
+                try {
+                    // Send message to Odoo via API
+                    const response = await fetch(`${this.apiUrl}/channels/${this.selectedChannel}/send`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message })
+                    });
+
+                    if (response.ok) {
+                        input.value = '';
+                        // Reload messages
+                        await this.loadMessages();
+                        console.log('✅ Message sent!');
+                    } else {
+                        alert('Failed to send message. Check console for errors.');
+                    }
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    alert('Error sending message. Make sure the API endpoint is implemented.');
+                }
+            },
+
+            viewAttachment(attachmentId, messageId) {
+                console.log(`📎 Opening attachment ${attachmentId} from message ${messageId}`);
+                
+                // Use our API proxy endpoint (authenticated)
+                const url = `${this.apiUrl}/attachments/${attachmentId}/download`;
+                
+                // Open in new tab
+                const win = window.open(url, '_blank');
+                if (!win) {
+                    alert('Please allow popups to view attachments');
+                }
+            },
+
+            selectChannel(channelId) {
+                this.selectedChannel = channelId;
+                this.renderChannels();
+                this.loadMessages();
+            },
+
+            setFilter(filter) {
+                this.currentFilter = filter;
+                this.selectedChannel = null;
+                this.renderChannels();
+                this.loadStats();
+            },
+
+            setTimeRange(hours) {
+                this.timeRangeHours = hours;
+                document.querySelectorAll('.time-range-btn').forEach(btn => {
+                    btn.classList.remove('bg-blue-600', 'text-white');
+                    btn.classList.add('bg-gray-100');
+                });
+                event.target.classList.remove('bg-gray-100');
+                event.target.classList.add('bg-blue-600', 'text-white');
+            },
+
+            filterChannels(query) {
+                const filtered = this.channels.filter(ch => 
+                    ch.name.toLowerCase().includes(query.toLowerCase())
+                );
+                
+                const container = document.getElementById('channelList');
+                if (filtered.length === 0) {
+                    container.innerHTML = '<div class="p-8 text-center text-gray-500">No channels found</div>';
+                    return;
+                }
+
+                container.innerHTML = filtered.map(channel => {
+                    const icon = this.getChannelIcon(channel);
+                    const isSelected = this.selectedChannel === channel.id;
+                    
+                    return `
+                        <button 
+                            onclick="dashboard.selectChannel(${channel.id})"
+                            class="w-full p-4 text-left hover:bg-gray-50 transition ${
+                                isSelected ? 'bg-blue-50 border-l-4 border-blue-600' : ''
+                            }"
+                        >
+                            <div class="flex items-center gap-3">
+                                <span class="text-2xl">${icon}</span>
+                                <div class="flex-1 min-w-0">
+                                    <p class="font-medium truncate">${this.escapeHtml(channel.name)}</p>
+                                    <p class="text-xs text-gray-500">${channel.source_type}</p>
+                                </div>
+                            </div>
+                        </button>
+                    `;
+                }).join('');
+            },
+
+            getChannelIcon(channel) {
+                const type = channel.source_type;
+                if (type === 'whatsapp') return '📱';
+                if (type === 'livechat') return '💬';
+                if (type === 'direct_message') return '👤';
+                if (type === 'team_channel') return '📢';
+                return '📨';
+            },
+
+            cleanHtml(html) {
+                const div = document.createElement('div');
+                div.innerHTML = html;
+                return div.textContent || div.innerText || '';
+            },
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            },
+
+            async refresh() {
+                console.log('🔄 Refreshing...');
+                await this.loadData();
+            },
+
+            startPolling() {
+                this.pollInterval = setInterval(() => {
+                    if (this.selectedChannel) {
+                        this.loadMessages();
+                    }
+                    this.loadStats();
+                }, 10000);
+                console.log('⏰ Auto-refresh enabled');
+            },
+
+            updateLastUpdateTime() {
+                const el = document.getElementById('lastUpdate');
+                const now = new Date();
+                el.innerHTML = `
+                    <span class="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                    ${now.toLocaleTimeString()}
+                `;
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            dashboard.init();
+        });
+    </script>
+</body>
+</html>
+

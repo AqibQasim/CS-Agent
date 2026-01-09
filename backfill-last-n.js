@@ -20,16 +20,16 @@ async function backfillLastN(count = 100) {
     
     console.log(`📥 Fetching last ${count} messages from Odoo...`);
     
-    // 🔥 Get last N messages by ID (no date filter)
+    // 🔥 Get last N messages by ID (no date filter, including WhatsApp)
     const messages = await odoo.execute(
       'mail.message',
       'search_read',
       [[
         ['model', '=', 'discuss.channel'],
-        ['message_type', '=', 'comment']
+        ['message_type', 'in', ['comment', 'whatsapp_message', 'notification']]
       ]],
       {
-        fields: ['id', 'body', 'date', 'author_id', 'email_from', 'res_id', 'attachment_ids'],
+        fields: ['id', 'body', 'date', 'author_id', 'email_from', 'res_id', 'attachment_ids', 'message_type'],
         order: 'id desc',  // 🔥 Most recent first
         limit: count
       }

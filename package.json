@@ -6,8 +6,27 @@
   "scripts": {
     "start": "node app.js",
     "server": "node server.js",
-    "dev": "node app.js & node server.js"
+    "dev": "node app.js & node server.js",
+    "autoreply": "node auto-reply-bot.js",
+    "test": "node test-auth.js",
+    "check": "node check-recent.js",
+    "sync": "node sync-all-recent.js",
+    "backfill": "node backfill-24h.js",
+    "backfill:custom": "node backfill-custom.js",
+    "backfill:n": "node backfill-last-n.js",
+    "backfill:yesterday": "node fetch-yesterday.js",
+    "example": "node example-usage.js"
   },
+  "keywords": [
+    "odoo",
+    "discuss",
+    "whatsapp",
+    "livechat",
+    "monitoring",
+    "dashboard"
+  ],
+  "author": "Wheekeep Agents Team",
+  "license": "MIT",
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",

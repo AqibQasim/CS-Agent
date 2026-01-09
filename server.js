@@ -185,18 +185,170 @@ app.get('/api/messages/search', async (req, res) => {
   }
 });
 
+// New endpoint: Fetch messages by time range
+app.get('/api/messages/timerange', async (req, res) => {
+  try {
+    await initialize();
+    const hours = parseInt(req.query.hours) || 24;
+    const limit = parseInt(req.query.limit) || 100;
+    
+    const messages = await store.getMessagesByTimeRange(hours, limit);
+
+    res.json({
+      hours: hours,
+      messages: messages,
+      count: messages.length,
+      timeRange: {
+        from: new Date(Date.now() - hours * 60 * 60 * 1000).toISOString(),
+        to: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching messages by time range:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// New endpoint: Fetch latest messages from Odoo directly (real-time)
+app.get('/api/odoo/messages/latest', async (req, res) => {
+  try {
+    await initialize();
+    const limit = parseInt(req.query.limit) || 20;
+    
+    // Fetch directly from Odoo
+    const messages = await odoo.getLatestMessagesAllChannels(limit);
+    
+    // Get channel info
+    const channelIds = [...new Set(messages.map(m => m.res_id))];
+    const channels = await odoo.getChannelsByIds(channelIds);
+    const channelMap = new Map(channels.map(ch => [ch.id, ch]));
+    
+    // Enrich messages with channel info
+    const enrichedMessages = messages.map(msg => ({
+      ...msg,
+      channel_name: channelMap.get(msg.res_id)?.name,
+      channel_type: detectChannelType(channelMap.get(msg.res_id) || {})
+    }));
+
+    res.json({
+      messages: enrichedMessages,
+      count: enrichedMessages.length,
+      source: 'odoo_direct'
+    });
+  } catch (error) {
+    console.error('Error fetching from Odoo:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// New endpoint: Send message to channel
+app.post('/api/channels/:id/send', async (req, res) => {
+  try {
+    await initialize();
+    const channelId = parseInt(req.params.id);
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    console.log(`📤 Sending message to channel ${channelId}: ${message.substring(0, 50)}...`);
+
+    // Send message to Odoo
+    await odoo.execute(
+      'mail.channel',
+      'message_post',
+      [channelId],
+      {
+        body: message,
+        message_type: 'comment',
+        subtype_xmlid: 'mail.mt_comment'
+      }
+    );
+
+    console.log(`✅ Message sent successfully to channel ${channelId}`);
+
+    res.json({
+      success: true,
+      channelId: channelId,
+      message: 'Message sent successfully'
+    });
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// New endpoint: Get attachment info
+app.get('/api/attachments/:id', async (req, res) => {
+  try {
+    await initialize();
+    const attachmentId = parseInt(req.params.id);
+
+    const attachment = await odoo.execute(
+      'ir.attachment',
+      'read',
+      [[attachmentId]],
+      { fields: ['name', 'datas_fname', 'mimetype', 'file_size', 'url'] }
+    );
+
+    if (attachment && attachment.length > 0) {
+      res.json(attachment[0]);
+    } else {
+      res.status(404).json({ error: 'Attachment not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching attachment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// New endpoint: Download attachment (with authentication)
+app.get('/api/attachments/:id/download', async (req, res) => {
+  try {
+    await initialize();
+    const attachmentId = parseInt(req.params.id);
+
+    // Get attachment data from Odoo
+    const attachment = await odoo.execute(
+      'ir.attachment',
+      'read',
+      [[attachmentId]],
+      { fields: ['name', 'datas', 'mimetype', 'datas_fname'] }
+    );
+
+    if (attachment && attachment.length > 0 && attachment[0].datas) {
+      const att = attachment[0];
+      const buffer = Buffer.from(att.datas, 'base64');
+      
+      res.setHeader('Content-Type', att.mimetype || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${att.name || att.datas_fname || 'attachment'}"`);
+      res.send(buffer);
+    } else {
+      res.status(404).json({ error: 'Attachment not found or no data' });
+    }
+  } catch (error) {
+    console.error('Error downloading attachment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Start server
 app.listen(PORT, async () => {
   console.log(`\n🌐 API Server running on http://localhost:${PORT}`);
   console.log(`📊 Dashboard available at http://localhost:${PORT}/index.html`);
+  console.log(`📊 New V2 Dashboard at http://localhost:${PORT}/index-v2.html`);
   console.log(`🔧 API endpoints:`);
-  console.log(`   GET /api/health`);
-  console.log(`   GET /api/channels`);
-  console.log(`   GET /api/messages/latest`);
-  console.log(`   GET /api/channels/:id/messages`);
-  console.log(`   GET /api/messages/unprocessed`);
-  console.log(`   GET /api/stats`);
-  console.log(`   GET /api/messages/search?q=query\n`);
+  console.log(`   GET  /api/health`);
+  console.log(`   GET  /api/channels`);
+  console.log(`   GET  /api/messages/latest`);
+  console.log(`   GET  /api/channels/:id/messages`);
+  console.log(`   POST /api/channels/:id/send  ← NEW! Send messages`);
+  console.log(`   GET  /api/messages/unprocessed`);
+  console.log(`   GET  /api/stats`);
+  console.log(`   GET  /api/messages/search?q=query`);
+  console.log(`   GET  /api/messages/timerange?hours=24`);
+  console.log(`   GET  /api/odoo/messages/latest?limit=20\n`);
 });
 
 module.exports = app;

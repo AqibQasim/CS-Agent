@@ -16,6 +16,7 @@ class MessageStore {
     await this.db.collection('messages').createIndex({ message_id: 1 }, { unique: true });
     await this.db.collection('messages').createIndex({ channel_id: 1 });
     await this.db.collection('messages').createIndex({ date: -1 });
+    await this.db.collection('messages').createIndex({ created_at: -1 });
     await this.db.collection('messages').createIndex({ processed: 1 });
     await this.db.collection('channel_state').createIndex({ channel_id: 1 }, { unique: true });
   }
@@ -138,6 +139,32 @@ class MessageStore {
         ]
       })
       .sort({ date: -1 })
+      .limit(limit)
+      .toArray();
+  }
+
+  // Get messages by time range (in hours) - filters by when message was SENT in Odoo
+  async getMessagesByTimeRange(hours = 24, limit = 100) {
+    const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+    
+    return await this.db.collection('messages')
+      .find({
+        date: { $gte: startTime }
+      })
+      .sort({ date: -1 })
+      .limit(limit)
+      .toArray();
+  }
+
+  // Get recently stored messages (filters by when we stored them in MongoDB)
+  async getRecentlyStoredMessages(hours = 24, limit = 100) {
+    const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+    
+    return await this.db.collection('messages')
+      .find({
+        created_at: { $gte: startTime }
+      })
+      .sort({ created_at: -1 })
       .limit(limit)
       .toArray();
   }

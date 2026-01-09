@@ -137,14 +137,14 @@ class OdooClient {
     return channels;
   }
 
-  // Get latest messages from ALL channels
+  // Get latest messages from ALL channels (including WhatsApp)
   async getLatestMessagesAllChannels(limit = 50) {
     const messages = await this.execute(
       'mail.message',
       'search_read',
       [[
         ['model', '=', 'discuss.channel'],
-        ['message_type', '=', 'comment']
+        ['message_type', 'in', ['comment', 'whatsapp_message', 'notification']]
       ]],
       {
         fields: [
@@ -160,7 +160,7 @@ class OdooClient {
     return messages;
   }
 
-  // Get new messages after a specific message ID (optimized)
+  // Get new messages after a specific message ID (optimized) - includes WhatsApp
   async getNewMessagesGlobal(lastMessageId = 0, limit = 100) {
     const messages = await this.execute(
       'mail.message',
@@ -168,10 +168,10 @@ class OdooClient {
       [[
         ['model', '=', 'discuss.channel'],
         ['id', '>', lastMessageId],
-        ['message_type', '=', 'comment']
+        ['message_type', 'in', ['comment', 'whatsapp_message', 'notification']]
       ]],
       {
-        fields: ['id', 'body', 'date', 'author_id', 'email_from', 'res_id', 'attachment_ids'],
+        fields: ['id', 'body', 'date', 'author_id', 'email_from', 'res_id', 'attachment_ids', 'message_type'],
         order: 'id asc',
         limit: limit
       }

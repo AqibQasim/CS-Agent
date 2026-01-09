@@ -14,13 +14,13 @@ async function checkRecentMessages() {
     
     console.log('🔍 Checking latest messages in Odoo...\n');
     
-    // Check last 10 messages with all details
+    // Check last 10 messages with all details (including WhatsApp)
     const messages = await odoo.execute(
       'mail.message',
       'search_read',
       [[
         ['model', '=', 'discuss.channel'],
-        ['message_type', '=', 'comment']
+        ['message_type', 'in', ['comment', 'whatsapp_message', 'notification']]
       ]],
       {
         fields: ['id', 'body', 'date', 'author_id', 'model', 'message_type', 'res_id'],
@@ -29,7 +29,7 @@ async function checkRecentMessages() {
       }
     );
     
-    console.log(`📨 Last 10 messages in discuss.channel:\n`);
+    console.log(`📨 Last 10 messages in discuss.channel (all types):\n`);
     
     messages.forEach((msg, i) => {
       const date = new Date(msg.date);
@@ -37,7 +37,7 @@ async function checkRecentMessages() {
       const author = msg.author_id ? msg.author_id[1] : 'Unknown';
       const body = (msg.body || '').replace(/<[^>]*>/g, '').substring(0, 60);
       
-      console.log(`${i + 1}. ID: ${msg.id}`);
+      console.log(`${i + 1}. ID: ${msg.id} [${msg.message_type}]`);
       console.log(`   📅 ${pktDate} PKT`);
       console.log(`   👤 ${author}`);
       console.log(`   💬 ${body}...`);
@@ -54,12 +54,12 @@ async function checkRecentMessages() {
       'search_count',
       [[
         ['model', '=', 'discuss.channel'],
-        ['message_type', '=', 'comment'],
+        ['message_type', 'in', ['comment', 'whatsapp_message', 'notification']],
         ['date', '>=', todayStr]
       ]]
     );
     
-    console.log(`📊 Messages posted TODAY (Jan 8, 2026): ${todayMessages}`);
+    console.log(`📊 Messages posted TODAY (Jan 9, 2026): ${todayMessages}`);
     
     // Check all message types (not just discuss.channel)
     const allMessages = await odoo.execute(

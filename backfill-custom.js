@@ -27,17 +27,17 @@ async function backfillCustomRange(hoursAgo = 24) {
     console.log(`📅 End: ${new Date().toISOString().replace('T', ' ').substring(0, 19)}`);
     console.log(`⏱️  Duration: ${hoursAgo} hours\n`);
     
-    // Fetch messages
+    // Fetch messages (including WhatsApp)
     const messages = await odoo.execute(
       'mail.message',
       'search_read',
       [[
         ['model', '=', 'discuss.channel'],
-        ['message_type', '=', 'comment'],
+        ['message_type', 'in', ['comment', 'whatsapp_message', 'notification']],
         ['date', '>=', startDateStr]
       ]],
       {
-        fields: ['id', 'body', 'date', 'author_id', 'email_from', 'res_id', 'attachment_ids'],
+        fields: ['id', 'body', 'date', 'author_id', 'email_from', 'res_id', 'attachment_ids', 'message_type'],
         order: 'date desc',
         limit: 10000
       }
